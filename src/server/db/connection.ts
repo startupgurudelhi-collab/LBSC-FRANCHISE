@@ -98,6 +98,14 @@ class LibSqlAdapter implements DatabaseAdapter {
   }
 }
 
+/**
+ * Translates generic '?' positional parameter placeholders into PostgreSQL '$1, $2, ...' syntax.
+ */
+export function toPgSql(sql: string): string {
+  let paramIdx = 1;
+  return sql.replace(/\?/g, () => `$${paramIdx++}`);
+}
+
 class PgAdapter implements DatabaseAdapter {
   private pool: pg.Pool;
 
@@ -106,12 +114,14 @@ class PgAdapter implements DatabaseAdapter {
   }
 
   async query<T = unknown>(sql: string, params?: unknown[]): Promise<T[]> {
-    const result = await this.pool.query(sql, params);
+    const pgSql = params && params.length > 0 ? toPgSql(sql) : sql;
+    const result = await this.pool.query(pgSql, params);
     return result.rows as T[];
   }
 
   async execute(sql: string, params?: unknown[]): Promise<{ rowsAffected: number }> {
-    const result = await this.pool.query(sql, params);
+    const pgSql = params && params.length > 0 ? toPgSql(sql) : sql;
+    const result = await this.pool.query(pgSql, params);
     return { rowsAffected: result.rowCount || 0 };
   }
 
@@ -137,11 +147,13 @@ class PgAdapter implements DatabaseAdapter {
     const client = await this.pool.connect();
     const txAdapter: DatabaseTransaction = {
       query: async <R = unknown>(sql: string, params?: unknown[]): Promise<R[]> => {
-        const res = await client.query(sql, params);
+        const pgSql = params && params.length > 0 ? toPgSql(sql) : sql;
+        const res = await client.query(pgSql, params);
         return res.rows as R[];
       },
       execute: async (sql: string, params?: unknown[]): Promise<{ rowsAffected: number }> => {
-        const res = await client.query(sql, params);
+        const pgSql = params && params.length > 0 ? toPgSql(sql) : sql;
+        const res = await client.query(pgSql, params);
         return { rowsAffected: res.rowCount || 0 };
       },
     };

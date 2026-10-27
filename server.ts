@@ -18,6 +18,8 @@ async function startServer() {
   const isProduction = env.NODE_ENV === 'production' || process.env.NODE_ENV === 'production';
   const PORT = isProduction ? (Number(process.env.PORT) || env.PORT || 3000) : 3000;
 
+  console.log(`[Startup] Initializing LBSC Platform (${isProduction ? 'production' : 'development'} mode, port ${PORT})...`);
+
   // 1. Basic security & utility middleware
   app.use(securityHeaders);
 
@@ -35,10 +37,12 @@ async function startServer() {
 
   // 2. Database connection & automated migration initialization
   try {
+    console.log('[Startup] Checking database connectivity...');
     const db = getDatabase();
     const health = await db.healthCheck();
     if (health.ok) {
       console.log(`[Database] Connected successfully (${db.getDialect()} - ${health.latencyMs}ms)`);
+      console.log('[Startup] Executing database migrations...');
       const migrationResult = await runMigrations(db);
       if (migrationResult.applied.length > 0) {
         console.log(`[Database] Applied ${migrationResult.applied.length} migration(s):`, migrationResult.applied);

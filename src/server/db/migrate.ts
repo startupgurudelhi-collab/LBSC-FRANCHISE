@@ -1,5 +1,6 @@
 import { getDatabase } from './connection.js';
 import type { DatabaseAdapter, MigrationDefinition, MigrationRecord } from '../types/index.js';
+import { sanitizeForLogging } from '../utils/loggerSanitizer.js';
 import { migration001CoreFoundation } from './migrations/001_core_foundation.js';
 import { migration002AuthRoles } from './migrations/002_auth_roles.js';
 import { migration003FranchiseManagement } from './migrations/003_franchise_management.js';
@@ -132,8 +133,9 @@ export async function acquireMigrationLock(
     );
     return workerId;
   } catch (err: any) {
+    console.warn('[Migration] Initial migration lock insert failed:', sanitizeForLogging(err?.message || err));
     throw new Error(
-      'Concurrent migration lock conflict: another instance acquired the initial migration lock.'
+      `Concurrent migration lock conflict or database error: ${err?.message || 'initial lock insert failed'}`
     );
   }
 }
