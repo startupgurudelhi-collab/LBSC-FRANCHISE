@@ -97,6 +97,7 @@ async function runTests() {
        VALUES (?, ?, ?, 'hash', 'Salem', 'Owner', 'active')`,
       [userA, orgA, emailA]
     );
+    await db.execute('INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)', [userA, 'role_franchise_owner']);
     const tokenA = generateToken({
       userId: userA,
       email: emailA,
@@ -114,6 +115,7 @@ async function runTests() {
        VALUES (?, ?, ?, 'hash', 'Madurai', 'Owner', 'active')`,
       [userB, orgB, emailB]
     );
+    await db.execute('INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)', [userB, 'role_franchise_owner']);
     const tokenB = generateToken({
       userId: userB,
       email: emailB,

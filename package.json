@@ -14,7 +14,9 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "db:migrate": "tsx src/server/db/cli.ts migrate",
-    "db:status": "tsx src/server/db/cli.ts status"
+    "db:status": "tsx src/server/db/cli.ts status",
+    "auth:reset-admin": "tsx src/server/db/cli.ts reset-admin",
+    "auth:ensure-admin": "tsx src/server/db/cli.ts ensure-admin"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

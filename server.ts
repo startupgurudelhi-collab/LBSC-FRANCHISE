@@ -47,6 +47,15 @@ async function startServer() {
       if (migrationResult.applied.length > 0) {
         console.log(`[Database] Applied ${migrationResult.applied.length} migration(s):`, migrationResult.applied);
       }
+      // 1. Ensure Super Administrator exists across all environments
+      await AuthService.ensureSuperAdmin(db);
+
+      // 2. Allow administrative password reset via secure runtime environment variable
+      if (process.env.RESET_ADMIN_PASSWORD && process.env.RESET_ADMIN_PASSWORD.trim().length >= 8) {
+        await AuthService.resetAdminPassword(process.env.RESET_ADMIN_PASSWORD.trim(), db);
+      }
+
+      // 3. Demo accounts (dummy franchise, demo owner) only seeded in non-production
       if (!isProduction) {
         await AuthService.seedDemoAccounts(db);
       }

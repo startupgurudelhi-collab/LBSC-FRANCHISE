@@ -117,7 +117,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
           <div className="mt-6 pt-5 border-t border-slate-100">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
               <KeyRound className="w-3.5 h-3.5 text-slate-400" />
-              Quick demo logins
+              Quick logins
             </p>
             <div className="space-y-2">
               <button
@@ -126,7 +126,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 className="w-full text-left p-2.5 rounded-lg border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 transition-colors flex items-center justify-between group"
               >
                 <div>
-                  <div className="text-xs font-medium text-slate-900 group-hover:text-indigo-700">Super Admin</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-medium text-slate-900 group-hover:text-indigo-700">Super Admin</span>
+                    <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200/60 rounded font-medium">
+                      System Admin
+                    </span>
+                  </div>
                   <div className="text-[11px] text-slate-500">admin@lbsc.internal</div>
                 </div>
                 <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 transition-transform group-hover:translate-x-0.5" />
@@ -134,14 +139,29 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
               <button
                 type="button"
+                disabled={Boolean(import.meta.env.PROD)}
                 onClick={() => handleQuickLogin('owner.salem.a@demo.lbsc.internal', 'SalemPass123!')}
-                className="w-full text-left p-2.5 rounded-lg border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 transition-colors flex items-center justify-between group"
+                className={`w-full text-left p-2.5 rounded-lg border transition-colors flex items-center justify-between group ${
+                  Boolean(import.meta.env.PROD)
+                    ? 'border-slate-200 bg-slate-50/80 opacity-60 cursor-not-allowed'
+                    : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40'
+                }`}
+                title={Boolean(import.meta.env.PROD) ? 'Demo franchise accounts are disabled in production' : undefined}
               >
                 <div>
-                  <div className="text-xs font-medium text-slate-900 group-hover:text-indigo-700">Franchise Owner (Salem)</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-medium text-slate-900 group-hover:text-indigo-700">Franchise Owner (Salem)</span>
+                    {Boolean(import.meta.env.PROD) && (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-slate-200/80 text-slate-600 rounded">
+                        Demo (Disabled in Prod)
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[11px] text-slate-500">owner.salem.a@demo.lbsc.internal</div>
                 </div>
-                <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 transition-transform group-hover:translate-x-0.5" />
+                {!Boolean(import.meta.env.PROD) && (
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 transition-transform group-hover:translate-x-0.5" />
+                )}
               </button>
             </div>
           </div>

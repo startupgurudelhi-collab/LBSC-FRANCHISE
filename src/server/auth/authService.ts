@@ -11,7 +11,116 @@ export interface UserAuthDetails extends AuthenticatedUser {
 
 export class AuthService {
   /**
-   * Seed / Ensure the demo accounts and associated franchise structure exist.
+   * Securely bootstraps the initial Super Administrator account if it does not exist.
+   * Safe to run in both production and development environments:
+   * - Idempotent and non-destructive: never alters or overwrites existing user passwords.
+   * - Uses real bcrypt hashing with 12 salt rounds.
+   * - Respects process.env.ADMIN_INITIAL_PASSWORD or process.env.ADMIN_PASSWORD if provided;
+   *   otherwise defaults to the standard platform initial password.
+   * - Ensures the 'super_admin' system role is mapped.
+   */
+  static async ensureSuperAdmin(dbInstance?: DatabaseAdapter, customPassword?: string): Promise<void> {
+    const db = dbInstance || getDatabase();
+    const isSqlite = db.getDialect() === 'sqlite';
+
+    // 1. Ensure Super Admin role exists
+    const superAdminRole = await db.query<any>('SELECT id FROM roles WHERE code = ? LIMIT 1', ['super_admin']);
+    let superAdminRoleId = superAdminRole[0]?.id || 'role_super_admin';
+    if (!superAdminRole || superAdminRole.length === 0) {
+      await db.execute(
+        'INSERT INTO roles (id, name, code, description, is_system) VALUES (?, ?, ?, ?, ?)',
+        ['role_super_admin', 'Super Administrator', 'super_admin', 'Unrestricted system access', isSqlite ? 1 : true]
+      );
+      superAdminRoleId = 'role_super_admin';
+    }
+
+    // 2. Check if admin user exists
+    const adminEmail = 'admin@lbsc.internal';
+    const adminUsers = await db.query<any>('SELECT id, password_hash FROM users WHERE email = ? LIMIT 1', [adminEmail]);
+
+    const initialPassword =
+      customPassword ||
+      process.env.ADMIN_INITIAL_PASSWORD ||
+      process.env.ADMIN_PASSWORD ||
+      'SuperAdminPassword123!';
+
+    let adminUserId = 'usr_super_admin_001';
+    if (adminUsers.length === 0) {
+      const adminPasswordHash = await hashPassword(initialPassword);
+      await db.execute(
+        `INSERT INTO users (id, organization_id, email, password_hash, first_name, last_name, status, token_version)
+         VALUES (?, NULL, ?, ?, 'Super', 'Admin', 'active', 1)`,
+        [adminUserId, adminEmail, adminPasswordHash]
+      );
+      console.log(`[Auth] Super Admin user initialized successfully: ${adminEmail}`);
+    } else {
+      adminUserId = adminUsers[0].id;
+      // If user exists but has no password hash, configure it
+      if (!adminUsers[0].password_hash) {
+        const adminPasswordHash = await hashPassword(initialPassword);
+        await db.execute('UPDATE users SET password_hash = ? WHERE id = ?', [adminPasswordHash, adminUserId]);
+        console.log(`[Auth] Configured missing password hash for existing Super Admin: ${adminEmail}`);
+      }
+    }
+
+    // 3. Ensure Super Admin role is mapped
+    const adminRoleMap = await db.query<any>(
+      'SELECT 1 FROM user_roles WHERE user_id = ? AND role_id = ? LIMIT 1',
+      [adminUserId, superAdminRoleId]
+    );
+    if (adminRoleMap.length === 0) {
+      await db.execute('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)', [adminUserId, superAdminRoleId]);
+    }
+  }
+
+  /**
+   * Securely resets the Super Administrator password.
+   * Can be invoked via CLI or server startup environment variable.
+   * - Enforces minimum password strength (>= 8 characters)
+   * - Generates real bcrypt hash with 12 salt rounds
+   * - Increments token_version to immediately invalidate all existing sessions
+   * - Records an audit log event
+   */
+  static async resetAdminPassword(newPassword: string, dbInstance?: DatabaseAdapter): Promise<{ success: boolean; email: string }> {
+    if (!newPassword || newPassword.trim().length < 8) {
+      throw new BadRequestError('Password must be at least 8 characters long');
+    }
+
+    const db = dbInstance || getDatabase();
+    const adminEmail = 'admin@lbsc.internal';
+    const users = await db.query<any>('SELECT id, token_version FROM users WHERE email = ? LIMIT 1', [adminEmail]);
+
+    if (!users || users.length === 0) {
+      await this.ensureSuperAdmin(db, newPassword.trim());
+      return { success: true, email: adminEmail };
+    }
+
+    const adminUser = users[0];
+    const newHash = await hashPassword(newPassword.trim());
+    const newTokenVersion = (adminUser.token_version || 1) + 1;
+
+    await db.execute(
+      'UPDATE users SET password_hash = ?, token_version = ?, status = ? WHERE id = ?',
+      [newHash, newTokenVersion, 'active', adminUser.id]
+    );
+
+    await AuditService.log({
+      action: 'ADMIN_PASSWORD_RESET',
+      entityType: 'user',
+      entityId: adminUser.id,
+      userId: adminUser.id,
+      newValues: {
+        email: adminEmail,
+        tokenVersion: newTokenVersion,
+      },
+    });
+
+    console.log(`[Auth] Super Admin password successfully reset for ${adminEmail} (sessions revoked)`);
+    return { success: true, email: adminEmail };
+  }
+
+  /**
+   * Seed / Ensure demo accounts and associated franchise structure exist in non-production.
    * Idempotent, non-destructive, and enforces real bcrypt password hashes.
    * STRICT SAFETY RULE: Must NEVER run in production and NEVER overwrite existing passwords.
    */
@@ -24,17 +133,10 @@ export class AuthService {
     const db = dbInstance || getDatabase();
     const isSqlite = db.getDialect() === 'sqlite';
 
-    // 1. Ensure Roles exist (in case roles were not yet inserted)
-    const superAdminRole = await db.query<any>('SELECT id FROM roles WHERE code = ? LIMIT 1', ['super_admin']);
-    let superAdminRoleId = superAdminRole[0]?.id || 'role_super_admin';
-    if (!superAdminRole || superAdminRole.length === 0) {
-      await db.execute(
-        'INSERT INTO roles (id, name, code, description, is_system) VALUES (?, ?, ?, ?, ?)',
-        ['role_super_admin', 'Super Administrator', 'super_admin', 'Unrestricted system access', isSqlite ? 1 : true]
-      );
-      superAdminRoleId = 'role_super_admin';
-    }
+    // 1. Ensure Super Admin exists
+    await this.ensureSuperAdmin(db);
 
+    // 2. Ensure Franchise Owner role exists
     const franchiseOwnerRole = await db.query<any>('SELECT id FROM roles WHERE code = ? LIMIT 1', ['franchise_owner']);
     let franchiseOwnerRoleId = franchiseOwnerRole[0]?.id || 'role_franchise_owner';
     if (!franchiseOwnerRole || franchiseOwnerRole.length === 0) {
@@ -43,35 +145,6 @@ export class AuthService {
         ['role_franchise_owner', 'Franchise Owner', 'franchise_owner', 'Franchise administrative access', isSqlite ? 1 : true]
       );
       franchiseOwnerRoleId = 'role_franchise_owner';
-    }
-
-    // 2. Ensure Super Admin user exists
-    const adminEmail = 'admin@lbsc.internal';
-    const adminUsers = await db.query<any>('SELECT id, password_hash FROM users WHERE email = ? LIMIT 1', [adminEmail]);
-    const adminPasswordHash = await hashPassword('SuperAdminPassword123!');
-
-    let adminUserId = 'usr_super_admin_001';
-    if (adminUsers.length === 0) {
-      await db.execute(
-        `INSERT INTO users (id, organization_id, email, password_hash, first_name, last_name, status, token_version)
-         VALUES (?, NULL, ?, ?, 'Super', 'Admin', 'active', 1)`,
-        [adminUserId, adminEmail, adminPasswordHash]
-      );
-    } else {
-      adminUserId = adminUsers[0].id;
-      // Never overwrite an existing user's password!
-      if (!adminUsers[0].password_hash) {
-        await db.execute('UPDATE users SET password_hash = ? WHERE id = ?', [adminPasswordHash, adminUserId]);
-      }
-    }
-
-    // Map Super Admin role
-    const adminRoleMap = await db.query<any>(
-      'SELECT 1 FROM user_roles WHERE user_id = ? AND role_id = ? LIMIT 1',
-      [adminUserId, superAdminRoleId]
-    );
-    if (adminRoleMap.length === 0) {
-      await db.execute('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)', [adminUserId, superAdminRoleId]);
     }
 
     // 3. Ensure Salem Franchise Organization & Profile exist
@@ -296,11 +369,22 @@ export class AuthService {
       [normalizedEmail]
     );
 
-    // If demo account and not found in database, self-heal by provisioning demo seeds in non-production
+    // If super admin account is not found in database, self-heal by ensuring the initial super admin exists (safe in all environments)
+    if ((!users || users.length === 0) && normalizedEmail === 'admin@lbsc.internal') {
+      await this.ensureSuperAdmin(db);
+      users = await db.query<any>(
+        `SELECT id, organization_id, email, password_hash, first_name, last_name, status
+         FROM users
+         WHERE email = ? LIMIT 1`,
+        [normalizedEmail]
+      );
+    }
+
+    // If demo franchise account and not found in database, self-heal in non-production only
     if (
       env.NODE_ENV !== 'production' &&
       (!users || users.length === 0) &&
-      (normalizedEmail === 'admin@lbsc.internal' || normalizedEmail === 'owner.salem.a@demo.lbsc.internal')
+      normalizedEmail === 'owner.salem.a@demo.lbsc.internal'
     ) {
       await this.seedDemoAccounts(db);
       users = await db.query<any>(
