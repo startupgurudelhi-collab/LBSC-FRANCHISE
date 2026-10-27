@@ -1,0 +1,8 @@
+{
+  "name": "LBSC PORTAL",
+  "description": "Backend foundation and modular architecture for the LBSC platform",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
